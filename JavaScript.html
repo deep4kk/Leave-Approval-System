@@ -1,0 +1,688 @@
+<script>
+// ============== STATE ==============
+let currentUser = null;
+let currentView = 'dashboard';
+let balances = [];
+let myRequests = [];
+let pendingApprovals = [];
+let allRequests = [];
+
+// ============== INITIALIZATION ==============
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadUserInfo();
+  await loadDashboard();
+  setupEventListeners();
+  checkUserRole();
+});
+
+async function loadUserInfo() {
+  try {
+    currentUser = await new Promise((resolve, reject) => {
+      google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler(reject)
+        .getCurrentUser();
+    });
+    
+    document.getElementById('userName').textContent = currentUser.name || currentUser.email;
+    document.getElementById('userRole').textContent = currentUser.role || 'Employee';
+    document.getElementById('userAvatar').textContent = (currentUser.name || currentUser.email).charAt(0).toUpperCase();
+  } catch (e) {
+    console.error('Failed to load user info:', e);
+    showToast('Failed to load user info', 'error');
+  }
+}
+
+function checkUserRole() {
+  if (currentUser.role === 'Manager' || currentUser.role === 'Admin') {
+    document.getElementById('approvalsNav').style.display = 'flex';
+  }
+  if (currentUser.role === 'Admin') {
+    document.getElementById('adminNav').style.display = 'flex';
+  }
+}
+
+// ============== NAVIGATION ==============
+function setupEventListeners() {
+  // Nav items
+  document.querySelectorAll('.nav-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const view = item.dataset.view;
+      if (view) switchView(view);
+    });
+  });
+  
+  // New request buttons
+  document.getElementById('newRequestBtn').addEventListener('click', () => switchView('new-request'));
+  document.getElementById('newRequestTopBtn').addEventListener('click', () => switchView('new-request'));
+  
+  // Form submission
+  document.getElementById('leaveForm').addEventListener('submit', handleLeaveSubmit);
+  
+  // Date inputs
+  document.getElementById('startDate').addEventListener('change', calculateWorkingDays);
+  document.getElementById('endDate').addEventListener('change', calculateWorkingDays);
+  
+  // Modal close
+  document.getElementById('modalOverlay').addEventListener('click', (e) => {
+    if (e.target.id === 'modalOverlay') closeModal();
+  });
+}
+
+function switchView(view) {
+  // Update nav
+  document.querySelectorAll('.nav-item').forEach(item => {
+    item.classList.toggle('active', item.dataset.view === view);
+  });
+  
+  // Update views
+  document.querySelectorAll('.view').forEach(v => {
+    v.classList.toggle('active', v.id === view + 'View');
+  });
+  
+  // Update title
+  const titles = {
+    'dashboard': 'Dashboard',
+    'my-requests': 'My Requests',
+    'new-request': 'New Leave Request',
+    'approvals': 'Pending Approvals',
+    'admin': 'Admin Dashboard'
+  };
+  document.getElementById('pageTitle').textContent = titles[view] || 'Dashboard';
+  
+  currentView = view;
+  
+  // Load view data
+  switch (view) {
+    case 'dashboard':
+      loadDashboard();
+      break;
+    case 'my-requests':
+      loadMyRequests();
+      break;
+    case 'approvals':
+      loadApprovals();
+      break;
+    case 'admin':
+      loadAdminData();
+      break;
+  }
+}
+
+// ============== DASHBOARD ==============
+async function loadDashboard() {
+  try {
+    // Load balances
+    balances = await new Promise((resolve, reject) => {
+      google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler(reject)
+        .getMyBalances();
+    });
+    
+    renderBalanceCards();
+    
+    // Load recent requests
+    myRequests = await new Promise((resolve, reject) => {
+      google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler(reject)
+        .getMyLeaveRequests();
+    });
+    
+    renderRecentRequests();
+    renderLeaveCalendar();
+    
+    // Load pending approvals count
+    if (currentUser.role === 'Manager' || currentUser.role === 'Admin') {
+      pendingApprovals = await new Promise((resolve, reject) => {
+        google.script.run
+          .withSuccessHandler(resolve)
+          .withFailureHandler(reject)
+          .getPendingApprovals();
+      });
+      
+      const badge = document.getElementById('approvalBadge');
+      if (pendingApprovals.length > 0) {
+        badge.textContent = pendingApprovals.length;
+        badge.style.display = 'inline';
+      } else {
+        badge.style.display = 'none';
+      }
+    }
+  } catch (e) {
+    console.error('Failed to load dashboard:', e);
+    showToast('Failed to load dashboard data', 'error');
+  }
+}
+
+function renderBalanceCards() {
+  const container = document.getElementById('balanceCards');
+  container.innerHTML = '';
+  
+  if (balances.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <p>No leave balances configured</p>
+      </div>
+    `;
+    return;
+  }
+  
+  balances.forEach(balance => {
+    const card = document.createElement('div');
+    card.className = `balance-card ${balance.leaveType.toLowerCase()}`;
+    
+    const percentage = (balance.remaining / balance.total) * 100;
+    const circumference = 2 * Math.PI * 18;
+    const offset = circumference - (percentage / 100) * circumference;
+    
+    card.innerHTML = `
+      <div class="balance-header">
+        <span class="balance-type">${balance.leaveType} Leave</span>
+        <div class="balance-icon ${balance.leaveType.toLowerCase()}">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+            <line x1="16" y1="2" x2="16" y2="6"></line>
+            <line x1="8" y1="2" x2="8" y2="6"></line>
+            <line x1="3" y1="10" x2="21" y2="10"></line>
+          </svg>
+        </div>
+      </div>
+      <div class="balance-numbers">
+        <span class="balance-remaining">${balance.remaining}</span>
+        <span class="balance-total">/ ${balance.total} days</span>
+      </div>
+      <svg class="progress-ring" viewBox="0 0 44 44">
+        <circle class="progress-ring-circle" cx="22" cy="22" r="18" 
+          stroke="${getColor(balance.leaveType)}" 
+          stroke-dasharray="${circumference}" 
+          stroke-dashoffset="${offset}"/>
+      </svg>
+    `;
+    
+    container.appendChild(card);
+  });
+}
+
+function getColor(type) {
+  const colors = { Sick: '#EF4444', Casual: '#F59E0B', Earned: '#10B981' };
+  return colors[type] || '#6B7280';
+}
+
+function renderRecentRequests() {
+  const container = document.getElementById('recentList');
+  const recent = myRequests.slice(0, 5);
+  
+  if (recent.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state" style="padding: 30px;">
+        <p>No leave requests yet</p>
+      </div>
+    `;
+    return;
+  }
+  
+  container.innerHTML = recent.map(req => `
+    <div class="recent-item" onclick="showRequestDetails('${req.requestId}')">
+      <div class="recent-info">
+        <span class="recent-dates">${formatDateShort(req.startDate)} - ${formatDateShort(req.endDate)}</span>
+        <span class="recent-type">${req.leaveType}</span>
+      </div>
+      <span class="status-badge ${req.status.toLowerCase()}">${req.status}</span>
+    </div>
+  `).join('');
+}
+
+function renderLeaveCalendar() {
+  const container = document.getElementById('leaveCalendar');
+  const approved = myRequests.filter(r => r.status === 'Approved');
+  
+  if (approved.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state" style="padding: 40px;">
+        <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+          <line x1="16" y1="2" x2="16" y2="6"></line>
+          <line x1="8" y1="2" x2="8" y2="6"></line>
+          <line x1="3" y1="10" x2="21" y2="10"></line>
+        </svg>
+        <h3>No approved leaves</h3>
+        <p>Your approved leave periods will appear here</p>
+      </div>
+    `;
+    return;
+  }
+  
+  container.innerHTML = `
+    <div class="calendar-blocks">
+      ${approved.map(req => `
+        <div class="calendar-block ${req.leaveType.toLowerCase()}">
+          ${formatDateShort(req.startDate)} - ${formatDateShort(req.endDate)}
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+// ============== MY REQUESTS ==============
+async function loadMyRequests() {
+  try {
+    myRequests = await new Promise((resolve, reject) => {
+      google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler(reject)
+        .getMyLeaveRequests();
+    });
+    
+    renderMyRequests();
+  } catch (e) {
+    console.error('Failed to load requests:', e);
+    showToast('Failed to load requests', 'error');
+  }
+}
+
+function renderMyRequests() {
+  const container = document.getElementById('myRequestsList');
+  
+  if (myRequests.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <polyline points="14 2 14 8 20 8"></polyline>
+        </svg>
+        <h3>No requests yet</h3>
+        <p>Submit your first leave request</p>
+        <button class="btn btn-primary" style="margin-top: 16px;" onclick="switchView('new-request')">New Request</button>
+      </div>
+    `;
+    return;
+  }
+  
+  container.innerHTML = myRequests.map(req => `
+    <div class="request-card ${req.leaveType.toLowerCase()}">
+      <div class="request-avatar">${(currentUser.name || 'U').charAt(0)}</div>
+      <div class="request-details">
+        <div class="request-header">
+          <span class="request-name">${req.leaveType} Leave</span>
+          <span class="status-badge ${req.status.toLowerCase()}">${req.status}</span>
+        </div>
+        <div class="request-dates">${formatDate(req.startDate)} - ${formatDate(req.endDate)}</div>
+        <div class="request-meta">${req.workingDays} working days</div>
+      </div>
+      <div class="request-actions">
+        ${req.status === 'Pending' ? `
+          <button class="btn btn-secondary btn-sm" onclick="cancelRequest('${req.requestId}')">Cancel</button>
+        ` : ''}
+        <button class="btn btn-secondary btn-sm" onclick="showRequestDetails('${req.requestId}')">View</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ============== APPROVALS ==============
+async function loadApprovals() {
+  try {
+    pendingApprovals = await new Promise((resolve, reject) => {
+      google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler(reject)
+        .getPendingApprovals();
+    });
+    
+    renderApprovals();
+  } catch (e) {
+    console.error('Failed to load approvals:', e);
+    showToast('Failed to load approvals', 'error');
+  }
+}
+
+function renderApprovals() {
+  const container = document.getElementById('approvalsList');
+  
+  if (pendingApprovals.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state" style="grid-column: 1 / -1;">
+        <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <polyline points="9 11 12 14 22 4"></polyline>
+          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+        </svg>
+        <h3>All caught up!</h3>
+        <p>No pending approvals at the moment</p>
+      </div>
+    `;
+    return;
+  }
+  
+  container.innerHTML = pendingApprovals.map(req => `
+    <div class="approval-card">
+      <div class="approval-header">
+        <div class="request-avatar">${(req.employeeName || 'U').charAt(0)}</div>
+        <div class="approval-info">
+          <h4>${req.employeeName || req.employeeEmail}</h4>
+          <p>${req.employeeEmail}</p>
+        </div>
+        <span class="status-badge pending">Pending</span>
+      </div>
+      <div class="approval-body">
+        <div class="approval-detail">
+          <span class="approval-label">Leave Type</span>
+          <span class="approval-value">${req.leaveType}</span>
+        </div>
+        <div class="approval-detail">
+          <span class="approval-label">Duration</span>
+          <span class="approval-value">${formatDate(req.startDate)} - ${formatDate(req.endDate)}</span>
+        </div>
+        <div class="approval-detail">
+          <span class="approval-label">Working Days</span>
+          <span class="approval-value">${req.workingDays}</span>
+        </div>
+        <div class="approval-detail">
+          <span class="approval-label">Reason</span>
+          <span class="approval-value">${req.reason || 'Not specified'}</span>
+        </div>
+      </div>
+      <div class="approval-actions">
+        <button class="btn btn-danger btn-sm" onclick="rejectRequest('${req.requestId}')">Reject</button>
+        <button class="btn btn-success btn-sm" onclick="approveRequest('${req.requestId}')">Approve</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ============== ADMIN ==============
+async function loadAdminData() {
+  try {
+    allRequests = await new Promise((resolve, reject) => {
+      google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler(reject)
+        .getAllRequests();
+    });
+    
+    renderAdminTable();
+  } catch (e) {
+    console.error('Failed to load admin data:', e);
+    showToast('Failed to load admin data', 'error');
+  }
+}
+
+function renderAdminTable() {
+  const tbody = document.getElementById('adminTableBody');
+  
+  if (allRequests.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="6" style="text-align: center; padding: 40px;">
+          No requests found
+        </td>
+      </tr>
+    `;
+    return;
+  }
+  
+  tbody.innerHTML = allRequests.map(req => `
+    <tr>
+      <td>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div class="request-avatar" style="width: 36px; height: 36px; font-size: 14px;">
+            ${(req.employeeName || 'U').charAt(0)}
+          </div>
+          <div>
+            <div style="font-weight: 500;">${req.employeeName || 'Unknown'}</div>
+            <div style="font-size: 12px; color: var(--gray-500);">${req.employeeEmail}</div>
+          </div>
+        </div>
+      </td>
+      <td>${req.leaveType}</td>
+      <td>
+        <div>${formatDateShort(req.startDate)}</div>
+        <div style="font-size: 12px; color: var(--gray-500);">to ${formatDateShort(req.endDate)}</div>
+      </td>
+      <td><span class="status-badge ${req.status.toLowerCase()}">${req.status}</span></td>
+      <td>${formatDateTime(req.submittedAt)}</td>
+      <td>
+        <button class="btn btn-secondary btn-sm" onclick="showRequestDetails('${req.requestId}')">View</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+// ============== FORM HANDLING ==============
+function calculateWorkingDays() {
+  const startDate = document.getElementById('startDate').value;
+  const endDate = document.getElementById('endDate').value;
+  
+  if (startDate && endDate) {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    let count = 0;
+    
+    const current = new Date(start);
+    while (current <= end) {
+      const dayOfWeek = current.getDay();
+      if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+        count++;
+      }
+      current.setDate(current.getDate() + 1);
+    }
+    
+    document.getElementById('workingDays').value = count + ' working days';
+    
+    // Check balance
+    const leaveType = document.getElementById('leaveType').value;
+    if (leaveType) {
+      const balance = balances.find(b => b.leaveType === leaveType);
+      if (balance && count > balance.remaining) {
+        document.getElementById('workingDays').classList.add('error');
+        showToast(`Insufficient balance. Only ${balance.remaining} days available.`, 'warning');
+      } else {
+        document.getElementById('workingDays').classList.remove('error');
+      }
+    }
+  }
+}
+
+async function handleLeaveSubmit(e) {
+  e.preventDefault();
+  
+  const leaveType = document.getElementById('leaveType').value;
+  const startDate = document.getElementById('startDate').value;
+  const endDate = document.getElementById('endDate').value;
+  const reason = document.getElementById('reason').value;
+  
+  if (!leaveType || !startDate || !endDate || !reason) {
+    showToast('Please fill all required fields', 'error');
+    return;
+  }
+  
+  if (new Date(startDate) > new Date(endDate)) {
+    showToast('End date must be after start date', 'error');
+    return;
+  }
+  
+  try {
+    const result = await new Promise((resolve, reject) => {
+      google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler(reject)
+        .submitLeaveRequest(leaveType, startDate, endDate, reason);
+    });
+    
+    showToast('Leave request submitted successfully!', 'success');
+    
+    // Reset form
+    document.getElementById('leaveForm').reset();
+    document.getElementById('workingDays').value = '';
+    
+    // Switch to dashboard
+    switchView('dashboard');
+  } catch (e) {
+    console.error('Submit failed:', e);
+    showToast(e.message || 'Failed to submit request', 'error');
+  }
+}
+
+async function approveRequest(requestId) {
+  try {
+    await new Promise((resolve, reject) => {
+      google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler(reject)
+        .approveLeaveRequest(requestId);
+    });
+    
+    showToast('Request approved!', 'success');
+    loadApprovals();
+    loadDashboard();
+  } catch (e) {
+    showToast(e.message || 'Failed to approve', 'error');
+  }
+}
+
+async function rejectRequest(requestId) {
+  const reason = prompt('Please provide a reason for rejection:');
+  if (!reason) return;
+  
+  try {
+    await new Promise((resolve, reject) => {
+      google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler(reject)
+        .rejectLeaveRequest(requestId, reason);
+    });
+    
+    showToast('Request rejected', 'success');
+    loadApprovals();
+    loadDashboard();
+  } catch (e) {
+    showToast(e.message || 'Failed to reject', 'error');
+  }
+}
+
+async function cancelRequest(requestId) {
+  if (!confirm('Are you sure you want to cancel this request?')) return;
+  
+  try {
+    await new Promise((resolve, reject) => {
+      google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler(reject)
+        .cancelLeaveRequest(requestId);
+    });
+    
+    showToast('Request cancelled', 'success');
+    loadMyRequests();
+    loadDashboard();
+  } catch (e) {
+    showToast(e.message || 'Failed to cancel', 'error');
+  }
+}
+
+// ============== MODAL ==============
+function showRequestDetails(requestId) {
+  const request = myRequests.find(r => r.requestId === requestId) || 
+                  allRequests.find(r => r.requestId === requestId);
+  
+  if (!request) {
+    showToast('Request not found', 'error');
+    return;
+  }
+  
+  const modalBody = document.getElementById('modalBody');
+  modalBody.innerHTML = `
+    <div class="approval-detail">
+      <span class="approval-label">Leave Type</span>
+      <span class="approval-value">${request.leaveType}</span>
+    </div>
+    <div class="approval-detail">
+      <span class="approval-label">Duration</span>
+      <span class="approval-value">${formatDate(request.startDate)} - ${formatDate(request.endDate)}</span>
+    </div>
+    <div class="approval-detail">
+      <span class="approval-label">Working Days</span>
+      <span class="approval-value">${request.workingDays}</span>
+    </div>
+    <div class="approval-detail">
+      <span class="approval-label">Status</span>
+      <span class="status-badge ${request.status.toLowerCase()}">${request.status}</span>
+    </div>
+    <div class="approval-detail">
+      <span class="approval-label">Reason</span>
+      <span class="approval-value">${request.reason || 'Not specified'}</span>
+    </div>
+    ${request.rejectionReason ? `
+      <div class="approval-detail">
+        <span class="approval-label">Rejection Reason</span>
+        <span class="approval-value" style="color: var(--danger);">${request.rejectionReason}</span>
+      </div>
+    ` : ''}
+    <div class="approval-detail">
+      <span class="approval-label">Submitted</span>
+      <span class="approval-value">${formatDateTime(request.submittedAt)}</span>
+    </div>
+  `;
+  
+  document.getElementById('modalOverlay').classList.add('active');
+}
+
+function closeModal() {
+  document.getElementById('modalOverlay').classList.remove('active');
+}
+
+// ============== EXPORT ==============
+function exportToPDF() {
+  showToast('PDF export coming soon', 'success');
+}
+
+// ============== UTILITIES ==============
+function formatDate(date) {
+  if (!date) return '-';
+  return new Date(date).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+}
+
+function formatDateShort(date) {
+  if (!date) return '-';
+  return new Date(date).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric'
+  });
+}
+
+function formatDateTime(date) {
+  if (!date) return '-';
+  return new Date(date).toLocaleString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
+
+function showToast(message, type = 'success') {
+  const container = document.getElementById('toastContainer');
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  
+  const icons = {
+    success: '<svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>',
+    error: '<svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>',
+    warning: '<svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>'
+  };
+  
+  toast.innerHTML = `${icons[type]}<span class="toast-message">${message}</span>`;
+  container.appendChild(toast);
+  
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateX(100px)';
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
+}
+</script>

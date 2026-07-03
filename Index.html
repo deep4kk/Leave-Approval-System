@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Leave Management System</title>
+  <?!= include('Stylesheet'); ?>
+</head>
+<body>
+  <div class="app-container">
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="logo">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+            <line x1="16" y1="2" x2="16" y2="6"></line>
+            <line x1="8" y1="2" x2="8" y2="6"></line>
+            <line x1="3" y1="10" x2="21" y2="10"></line>
+          </svg>
+        </div>
+        <span class="logo-text">Leave Manager</span>
+      </div>
+      
+      <nav class="sidebar-nav">
+        <button class="nav-item active" data-view="dashboard">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="7" height="7"></rect>
+            <rect x="14" y="3" width="7" height="7"></rect>
+            <rect x="14" y="14" width="7" height="7"></rect>
+            <rect x="3" y="14" width="7" height="7"></rect>
+          </svg>
+          <span>Dashboard</span>
+        </button>
+        
+        <button class="nav-item" data-view="my-requests">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+          </svg>
+          <span>My Requests</span>
+        </button>
+        
+        <button class="nav-item" data-view="new-request" id="newRequestBtn">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="16"></line>
+            <line x1="8" y1="12" x2="16" y2="12"></line>
+          </svg>
+          <span>New Request</span>
+        </button>
+        
+        <button class="nav-item" data-view="approvals" id="approvalsNav" style="display: none;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="9 11 12 14 22 4"></polyline>
+            <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+          </svg>
+          <span>Approvals</span>
+          <span class="badge" id="approvalBadge" style="display: none;">0</span>
+        </button>
+        
+        <button class="nav-item" data-view="admin" id="adminNav" style="display: none;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+          <span>Admin</span>
+        </button>
+      </nav>
+      
+      <div class="sidebar-footer">
+        <div class="user-info" id="userInfo">
+          <div class="user-avatar" id="userAvatar">U</div>
+          <div class="user-details">
+            <span class="user-name" id="userName">Loading...</span>
+            <span class="user-role" id="userRole">-</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+    
+    <!-- Main Content -->
+    <main class="main-content">
+      <header class="top-bar">
+        <h1 class="page-title" id="pageTitle">Dashboard</h1>
+        <div class="top-bar-actions">
+          <button class="btn btn-primary" id="newRequestTopBtn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            New Request
+          </button>
+        </div>
+      </header>
+      
+      <div class="content-area">
+        <!-- Dashboard View -->
+        <section class="view active" id="dashboardView">
+          <div class="dashboard-grid">
+            <!-- Balance Cards -->
+            <div class="balance-cards" id="balanceCards">
+              <!-- Dynamically populated -->
+            </div>
+            
+            <!-- Calendar Preview -->
+            <div class="calendar-card">
+              <h3>Leave Calendar</h3>
+              <div class="calendar-container" id="leaveCalendar">
+                <!-- Leave blocks will be rendered here -->
+              </div>
+            </div>
+            
+            <!-- Recent Requests -->
+            <div class="recent-card">
+              <h3>Recent Requests</h3>
+              <div class="recent-list" id="recentList">
+                <!-- Dynamically populated -->
+              </div>
+            </div>
+          </div>
+        </section>
+        
+        <!-- My Requests View -->
+        <section class="view" id="myRequestsView">
+          <div class="requests-list" id="myRequestsList">
+            <!-- Dynamically populated -->
+          </div>
+        </section>
+        
+        <!-- New Request View -->
+        <section class="view" id="newRequestView">
+          <div class="form-card">
+            <h2>Submit Leave Request</h2>
+            <form id="leaveForm" class="leave-form">
+              <div class="form-group">
+                <label for="leaveType">Leave Type</label>
+                <select id="leaveType" required>
+                  <option value="">Select leave type</option>
+                  <option value="Sick">Sick Leave</option>
+                  <option value="Casual">Casual Leave</option>
+                  <option value="Earned">Earned Leave</option>
+                </select>
+              </div>
+              
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="startDate">Start Date</label>
+                  <input type="date" id="startDate" required>
+                </div>
+                <div class="form-group">
+                  <label for="endDate">End Date</label>
+                  <input type="date" id="endDate" required>
+                </div>
+              </div>
+              
+              <div class="form-group">
+                <label for="workingDays">Working Days</label>
+                <input type="text" id="workingDays" readonly placeholder="Auto-calculated">
+              </div>
+              
+              <div class="form-group">
+                <label for="reason">Reason</label>
+                <textarea id="reason" rows="4" required placeholder="Enter reason for leave..."></textarea>
+              </div>
+              
+              <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="switchView('dashboard')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Submit Request</button>
+              </div>
+            </form>
+          </div>
+        </section>
+        
+        <!-- Approvals View -->
+        <section class="view" id="approvalsView">
+          <div class="approvals-list" id="approvalsList">
+            <!-- Dynamically populated -->
+          </div>
+        </section>
+        
+        <!-- Admin View -->
+        <section class="view" id="adminView">
+          <div class="admin-header">
+            <h2>All Leave Requests</h2>
+            <button class="btn btn-secondary" onclick="exportToPDF()">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              Export PDF
+            </button>
+          </div>
+          <div class="admin-table-container">
+            <table class="admin-table" id="adminTable">
+              <thead>
+                <tr>
+                  <th>Employee</th>
+                  <th>Type</th>
+                  <th>Duration</th>
+                  <th>Status</th>
+                  <th>Submitted</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="adminTableBody">
+                <!-- Dynamically populated -->
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+  
+  <!-- Toast Container -->
+  <div class="toast-container" id="toastContainer"></div>
+  
+  <!-- Modal -->
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal" id="requestModal">
+      <div class="modal-header">
+        <h3>Leave Request Details</h3>
+        <button class="modal-close" onclick="closeModal()">&times;</button>
+      </div>
+      <div class="modal-body" id="modalBody">
+        <!-- Modal content -->
+      </div>
+    </div>
+  </div>
+  
+  <?!= include('JavaScript'); ?>
+</body>
+</html>
